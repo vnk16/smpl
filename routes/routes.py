@@ -4,7 +4,7 @@ import uuid
 import bcrypt
 from jose import jwt, JWTError
 from fastapi import APIRouter
-from account.models.models import AdminUser, OTPStorage
+from models.models import AdminUser, OTPStorage
 from dotenv import load_dotenv
 
 load_dotenv()

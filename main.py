@@ -1,6 +1,6 @@
 from fastapi import FastAPI
-from account.database.database import connect_db
-from account.routes.routes import router
+from database.database import connect_db
+from routes.routes import router
 
 app = FastAPI()
 app.include_router(router)
