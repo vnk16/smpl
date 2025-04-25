@@ -1,147 +1,136 @@
-from datetime import datetime, timedelta
-import os
+# routes.py
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, EmailStr
+from datetime import datetime
+from mongoengine.errors import NotUniqueError
+from models.models import AdminUser
+from utils import generate_access_token, generate_uuid
 import uuid
-import bcrypt
-from jose import jwt, JWTError
-from fastapi import APIRouter
-from models.models import AdminUser, OTPStorage
-from dotenv import load_dotenv
 
-load_dotenv()
 router = APIRouter(prefix="/admin", tags=["Admin"])
-otp_router = APIRouter(prefix="/admin/otp", tags=["OTP"])
 
-# Config
-SECRET_KEY = os.getenv("SECRET_KEY")
-ACCESS_TOKEN_EXPIRE = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
-OTP_EXPIRE = int(os.getenv("OTP_EXPIRE_MINUTES"))
-
-# Utility Functions
-def create_access_token(data: dict):
-    expires = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE)
-    data.update({"exp": expires})
-    return jwt.encode(data, SECRET_KEY, algorithm="HS256")
-
-async def create_otp_record(email: str, user_id: str):
-    OTPStorage.objects(email=email).delete()
-    otp = "3812"  # Generate proper OTP in production
-    expires = datetime.utcnow() + timedelta(minutes=OTP_EXPIRE)
-    OTPStorage(
-        email=email,
-        user_id=user_id,
-        otp_code=otp,
-        expires_at=expires
-    ).save()
-    print(f"OTP for {email}: {otp}")  # Remove in production
-    return otp
-
-# Auth Endpoints
-@router.post("/create")
-async def create_admin(
-    first_name: str,
-    last_name: str,
-    email: str,
-    phone: str,
+class AdminCreateRequest(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr
+    phone: str
     password: str
-):
-    if AdminUser.objects(email=email).first():
-        return {"status": False, "error": "Email exists", "status_code": 400}
 
-    user_id = str(uuid.uuid4())
-    hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    token = create_access_token({"sub": user_id, "email": email, "roles": ["Admin"]})
-    
-    admin = AdminUser(
-        first_name=first_name,
-        last_name=last_name,
-        user_id=user_id,
-        email=email,
-        phone=phone,
-        password=hashed_pw,
-        access_token=token
-    ).save()
+class AdminCreateResponse(BaseModel):
+    status: bool
+    status_code: int
+    description: str
+    data: dict
+
+@router.post("/create", response_model=AdminCreateResponse)
+def create_admin_user(request: AdminCreateRequest):
+    # Check if user already exists
+    if AdminUser.objects(email=request.email).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+    if AdminUser.objects(phone=request.phone).first():
+        raise HTTPException(status_code=400, detail="Phone already registered")
+
+    user_id = generate_uuid()
+    roles = ["Admin", "Editor"]
+    now = datetime.utcnow()
+    access_token = generate_access_token({"sub": user_id, "email": request.email, "roles": roles})
+
+    try:
+        admin = AdminUser(
+            first_name=request.first_name,
+            last_name=request.last_name,
+            user_id=user_id,
+            email=request.email,
+            phone=request.phone,
+            password=request.password,  # Hash in production!
+            status=True,
+            roles=roles,
+            created_at=now,
+            created_by="",
+            updated_at=now,
+            updated_by="",
+            profile_image="",
+            verification_status=True,
+            access_token=access_token
+        )
+        admin.save()
+    except NotUniqueError:
+        raise HTTPException(status_code=400, detail="User already exists")
 
     return {
         "status": True,
-        "status_code": 201,
+        "status_code": 200,
+        "description": "admin account created",
         "data": {
-            "user_id": user_id,
-            "email": email,
-            "access_token": token
+            "first_name": admin.first_name,
+            "last_name": admin.last_name,
+            "user_id": admin.user_id,
+            "email": admin.email,
+            "phone": admin.phone,
+            "status": admin.status,
+            "roles": admin.roles,
+            "created_at": admin.created_at.isoformat() + "Z",
+            "created_by": admin.created_by,
+            "updated_at": admin.updated_at.isoformat() + "Z",
+            "updated_by": admin.updated_by,
+            "profile_image": admin.profile_image,
+            "verification_status": admin.verification_status,
+            "access_token": admin.access_token
         }
     }
 
-@router.post("/login")
-async def admin_login(email: str, password: str):
-    admin = AdminUser.objects(email=email).first()
-    if not admin or not bcrypt.checkpw(password.encode(), admin.password.encode()):
-        return {"status": False, "error": "Invalid credentials", "status_code": 401}
+class AdminAccountApprovalRequest(BaseModel):
+    user_id: str
+    first_name: str
+    last_name: str
+    email: str
+    phone: str
+    verification_status: bool  # True: Approved, False: Rejected
+    email_note: str
+    approved_by: str  # Admin who approves the account
 
-    await create_otp_record(email, admin.user_id)
+class AdminAccountApprovalResponse(BaseModel):
+    status: bool
+    status_code: int
+    description: str
+    data: list
+
+@router.post("/account/approval", response_model=AdminAccountApprovalResponse)
+def approve_admin_account(request: AdminAccountApprovalRequest):
+    # Find the user by user_id
+    admin_user = AdminUser.objects(user_id=request.user_id).first()
+
+    if not admin_user:
+        raise HTTPException(status_code=404, detail="Admin user not found")
+
+    # Update the verification status and approval details
+    admin_user.verification_status = request.verification_status
+    admin_user.updated_at = datetime.utcnow()
+    admin_user.updated_by = request.approved_by
+
+    # You can add logic here to send the approval/rejection email (for example using an SMTP service)
+
+    # Save the changes
+    admin_user.save()
+
+    # Return a success response
     return {
         "status": True,
         "status_code": 200,
-        "data": {"email": email, "user_id": admin.user_id}
+        "description": "Admin account approval updated successfully",
+        "data": [{
+            "first_name": admin_user.first_name,
+            "last_name": admin_user.last_name,
+            "user_id": admin_user.user_id,
+            "email": admin_user.email,
+            "phone": admin_user.phone,
+            "status": admin_user.status,
+            "roles": admin_user.roles,
+            "created_at": admin_user.created_at.isoformat() + "Z",
+            "created_by": admin_user.created_by,
+            "updated_at": admin_user.updated_at.isoformat() + "Z",
+            "updated_by": admin_user.updated_by,
+            "profile_image": admin_user.profile_image,
+            "verification_status": admin_user.verification_status
+        }]
     }
-
-@otp_router.post("/verify")
-async def verify_otp(email: str, user_id: str, otp: str):
-    record = OTPStorage.objects(email=email).first()
-    if not record or record.otp_code != otp:
-        return {"status": False, "error": "Invalid OTP", "status_code": 400}
-    
-    if datetime.utcnow() > record.expires_at:
-        return {"status": False, "error": "OTP expired", "status_code": 400}
-
-    admin = AdminUser.objects(email=email, user_id=user_id).first()
-    if not admin:
-        return {"status": False, "error": "User not found", "status_code": 404}
-
-    token = create_access_token({"sub": user_id, "email": email, "roles": admin.roles})
-    admin.update(access_token=token, verification_status=True)
-    record.delete()
-
-    return {
-        "status": True,
-        "status_code": 200,
-        "data": {
-            "access_token": token,
-            "user_id": user_id,
-            "email": email
-        }
-    }
-
-@otp_router.post("/resend")
-async def resend_otp(email: str, user_id: str):
-    admin = AdminUser.objects(email=email, user_id=user_id).first()
-    if not admin:
-        return {"status": False, "error": "User not found", "status_code": 404}
-
-    await create_otp_record(email, user_id)
-    return {"status": True, "status_code": 200, "data": {"email": email}}
-
-@router.post("/password/forgot")
-async def forgot_password(email: str):
-    admin = AdminUser.objects(email=email).first()
-    if not admin:
-        return {"status": False, "error": "User not found", "status_code": 404}
-
-    await create_otp_record(email, admin.user_id)
-    return {"status": True, "status_code": 200, "data": {"email": email}}
-
-@router.post("/password/reset")
-async def reset_password(email: str, user_id: str, password: str):
-    admin = AdminUser.objects(email=email, user_id=user_id).first()
-    if not admin:
-        return {"status": False, "error": "User not found", "status_code": 404}
-
-    hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    admin.update(password=hashed_pw, updated_at=datetime.utcnow())
-    
-    return {
-        "status": True,
-        "status_code": 200,
-        "data": {"email": email, "user_id": user_id}
-    }
-
-router.include_router(otp_router)

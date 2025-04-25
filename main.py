@@ -1,10 +1,12 @@
+# main.py
 from fastapi import FastAPI
+from routes.routes import router as admin_router
 from database.database import connect_db
-from routes.routes import router
 
 app = FastAPI()
-app.include_router(router)
 
-@app.on_event("startup")
-def startup_db():
-    connect_db()
+# Connect to MongoDB
+connect_db()
+
+# Include the admin user routes
+app.include_router(admin_router)

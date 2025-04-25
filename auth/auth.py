@@ -1,33 +1,14 @@
-from jose import JWTError, jwt
-from fastapi import Depends
-from models import AdminUser
-from utils import verify_password
+# auth.py
 import os
+from datetime import timedelta, datetime
+from jose import jwt
 
-# Define SECRET_KEY here (temporary solution)
-SECRET_KEY = os.getenv("SECRET_KEY") or "your-super-secret-key-here"  # MUST change in production
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
+ALGORITHM = "HS256"
 
-async def authenticate_user(email: str, password: str):
-    admin = AdminUser.objects(email=email).first()
-    if not admin or not verify_password(password, admin.password):
-        return None
-    return admin
-
-async def get_current_user(token: str):
-    credentials_exception = {
-        "status": False,
-        "error": "Invalid credentials",
-        "status_code": 401
-    }
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        user_id: str = payload.get("sub")
-        if user_id is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-    
-    user = AdminUser.objects(user_id=user_id).first()
-    if user is None:
-        raise credentials_exception
-    return user
+def create_access_token(data: dict, expires_delta: timedelta = timedelta(hours=2)):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + expires_delta
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
