@@ -1,12 +1,11 @@
-# main.py
 from fastapi import FastAPI
-from routes.routes import router as admin_router
-from database.database import connect_db
+from routes.routes import router
+from database.database import init_db
 
 app = FastAPI()
+init_db()
+app.include_router(router)
 
-# Connect to MongoDB
-connect_db()
-
-# Include the admin user routes
-app.include_router(admin_router)
+@app.get("/")
+def index():
+    return {"message": "Admin API is running"}

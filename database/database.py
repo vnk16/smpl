@@ -1,5 +1,9 @@
-# database.py
 from mongoengine import connect
+import os
+from dotenv import load_dotenv
 
-def connect_db():
-    connect(db="act", host="mongodb://localhost:27017/act")
+load_dotenv()
+MONGO_URI = os.getenv("MONGO_URI")
+
+def init_db():
+    connect(host=MONGO_URI)
