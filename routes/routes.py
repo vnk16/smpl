@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter,Body
 from models.models import AdminUser
 from utils import generate_user_id, hash_password
 from auth.generate_token import create_access_token
@@ -8,11 +8,11 @@ router = APIRouter()
 
 @router.post("/admin/create")
 async def create_admin(
-    first_name: str,
-    last_name: str,
-    email: str,
-    phone: str,
-    password: str
+    first_name: str=Body(...),
+    last_name: str=Body(...),
+    email: str=Body(...),
+    phone: str=Body(...),
+    password: str=Body(...)
 ):
     try:
         if AdminUser.objects(email=email).first():
