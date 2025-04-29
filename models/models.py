@@ -1,5 +1,5 @@
-from mongoengine import Document, StringField, BooleanField, ListField, DateTimeField
-import datetime
+from mongoengine import Document, StringField, BooleanField, DateTimeField, ListField
+from datetime import datetime
 
 class AdminUser(Document):
     first_name = StringField(required=True)
@@ -10,10 +10,10 @@ class AdminUser(Document):
     password = StringField(required=True)
     status = BooleanField(default=True)
     roles = ListField(StringField(), default=["Admin"])
-    created_at = DateTimeField(default=datetime.datetime.utcnow)
-    created_by = StringField()
-    updated_at = DateTimeField(default=datetime.datetime.utcnow)
-    updated_by = StringField()
-    profile_image = StringField()
+    created_at = DateTimeField(default=datetime.utcnow)
+    created_by = StringField(default="")
+    updated_at = DateTimeField(default=datetime.utcnow)
+    updated_by = StringField(default="")
+    profile_image = StringField(default="")
     verification_status = BooleanField(default=False)
-    access_token = StringField()
+    access_token = StringField(default="")
