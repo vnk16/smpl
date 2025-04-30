@@ -4,6 +4,10 @@ from utils import hash_password
 from auth.generate_token import create_access_token, verify_token
 import datetime
 import uuid
+import bcrypt
+from jose import jwt, JWTError
+
+
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -56,7 +60,6 @@ async def create_admin(
             "verification_status": admin.verification_status,
             "access_token": admin.access_token
         }
-
         return {
             "status": True,
             "status_code": 201,
@@ -80,7 +83,7 @@ async def approve_admin_account(
     email: str=Body(...),
     phone: str=Body(...),
     verification_status: bool=Body(...),
-    email_note: str=Body(...),
+    email_note: str=Body("Dear user, your account creation request has been approved, you may receive your password via system generated email. Please check and proceed with login to Zukarte Admin Portal. Thank You!"),
     approved_by: str=Body(...),
     token: str=Body  # Passed in body
 ):
@@ -144,3 +147,94 @@ async def approve_admin_account(
             "description": f"Internal Server Error: {str(e)}",
             "data": []
         }
+
+@router.post("/login")
+async def admin_login(
+    email: str=Body(...),
+    password: str=Body(...), 
+    token: str=Body
+    
+    ):
+    token_data = verify_token(token)
+    if not token_data:
+        return {
+            "status": False,
+            "status_code": 401,
+            "description": "Invalid or expired token",
+            "data": []
+        }
+    admin = AdminUser.objects(email=email).first()
+    if not admin or not bcrypt.checkpw(password.encode(), admin.password.encode()):
+        return {
+            "status": False,
+            "status_code": 401,
+            "description": "Invalid credentials",
+            "data": []
+        }
+    
+    return {
+        "status": True,
+        "status_code": 200,
+        "description": "We have sent you access code via mail verification",
+        "data": {
+            "email": email,
+            "user_id": admin.user_id
+        }
+    }
+
+@router.post("/otp/verify")
+async def verify_otp(
+    email: str=Body(...), 
+    user_id: str=Body(...), 
+    otp: str=Body(...), 
+    token: str=Body
+    ):
+    token_data = verify_token(token)
+    if not token_data:
+        return {
+            "status": False,
+            "status_code": 401,
+            "description": "Invalid or expired token",
+            "data": []
+        }
+    admin = AdminUser.objects(email=email, user_id=user_id).first()
+    if not admin:
+        return {
+            "status": False,
+            "status_code": 404,
+            "description": "Admin not found",
+            "data": []
+        }
+
+    if otp != "3812":  # Example only. Replace with real OTP validation logic
+        return {
+            "status": False,
+            "status_code": 400,
+            "description": "Invalid OTP or account not verified",
+            "data": []
+        }
+    adminData={
+            "first_name": admin.first_name,
+            "last_name": admin.last_name,
+            "user_name": admin.first_name + admin.last_name,
+            "user_id": admin.user_id,
+            "email": admin.email,
+            "phone": admin.phone,
+            "status": admin.status,
+            "roles": admin.roles,
+            "created_at": admin.created_at.isoformat(),
+            "created_by": admin.created_by,
+            "updated_at": admin.updated_at.isoformat(),
+            "updated_by": admin.updated_by,
+            "profile_image": admin.profile_image,
+            "verification_status": admin.verification_status,
+            "access_token": admin.access_token
+        }
+
+    return {
+        "status": True,
+        "status_code": 200,
+        "description": "Admin signIn successful",
+        "data": [adminData]
+    }
+
