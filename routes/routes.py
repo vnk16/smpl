@@ -3,6 +3,7 @@ from models.models import AdminUser
 from utils import hash_password
 from auth.generate_token import create_access_token, verify_token
 import datetime
+from datetime import datetime
 import uuid
 import bcrypt
 from jose import jwt, JWTError
@@ -153,8 +154,7 @@ async def admin_login(
     email: str=Body(...),
     password: str=Body(...), 
     token: str=Body
-    
-    ):
+):
     token_data = verify_token(token)
     if not token_data:
         return {
@@ -238,3 +238,115 @@ async def verify_otp(
         "data": [adminData]
     }
 
+@router.post("/otp/resend")
+async def resend_otp(
+    email: str=Body(...), 
+    user_id: str=Body(...),
+    token: str=Body
+    ):
+    token_data = verify_token(token)
+    if not token_data:
+        return {
+            "status": False,
+            "status_code": 401,
+            "description": "Invalid or expired token",
+            "data": []
+        }
+    admin = AdminUser.objects(email=email, user_id=user_id).first()
+    if not admin:
+        return {
+            "status": False,
+            "status_code": 404,
+            "description": "Admin not found",
+            "data": []
+        }
+
+    adminData={
+            "user_id": admin.user_id,
+            "email": admin.email,
+        }
+
+    return {
+        "status": True,
+        "status_code": 200,
+        "description": "We have sent you access code via mail verification",
+        "data": [adminData]
+    }
+
+
+@router.post("/password/forgot")
+async def forgot_password(
+    email: str=Body(...),
+    token: str=Body(...)
+):
+    
+
+    token_data = verify_token(token)
+    if not token_data:
+        return {
+            "status": False,
+            "status_code": 401,
+            "description": "Invalid or expired token",
+            "data": []
+        }
+
+    admin = AdminUser.objects(email=email).first()
+    if not admin:
+        return {
+            "status": False,
+            "status_code": 404,
+            "description": "Admin not found",
+            "data": []
+        }
+
+    forgot_data = {
+        "email": email
+    }
+
+    return {
+        "status": True,
+        "status_code": 200,
+        "description": "We have sent you access code via mail verification",
+        "data": [forgot_data]
+    }
+
+@router.post("/password/reset")
+async def reset_password(
+    email: str=Body(...), 
+    user_id: str=Body(...), 
+    password: str=Body(...), 
+    token: str=Body
+    ):
+    token_data = verify_token(token)
+    if not token_data:
+        return {
+            "status": False,
+            "status_code": 401,
+            "description": "Invalid or expired token",
+            "data": []
+        }
+    admin = AdminUser.objects(email=email, user_id=user_id).first()
+    if not admin:
+        return {
+            "status": False,
+            "status_code": 404,
+            "description": "Admin not found",
+            "data": []
+        }
+
+    hashed_password = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    admin.update(password=hashed_password, updated_at=datetime.utcnow())
+
+
+    reset_data = {
+        "user_id": admin.user_id,
+        "email": admin.email,
+        "access_token": admin.access_token
+    }
+
+    return {
+        "status": True,
+        "status_code": 200,
+        "description": "Your password has been reset successfully. You can now log in with your new password.",
+        "data": [reset_data]
+    }
